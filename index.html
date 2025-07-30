@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Моя Пошаговая Tower Defense</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        html, body {
+            height: 100%; margin: 0; overflow: hidden;
+            font-family: 'Inter', sans-serif; background-color: #1f2937; /* bg-gray-800 */
+            color: white;
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #374151; border-radius: 10px; } /* bg-gray-700 */
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #6b7280; border-radius: 10px; } /* bg-gray-500 */
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #9ca3af; } /* bg-gray-400 */
+
+        #gameArea {
+            display: grid; 
+            place-items: center;
+            overflow: auto; 
+            height: 100%; 
+            /* position: relative; -- Убрано, если было добавлено для контекстных модальных окон */
+        }
+
+        #gameCanvas {
+            cursor: default; background-color: transparent; border: none;
+            image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges;
+            flex-shrink: 0;
+        }
+        .error-message {
+             position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+             color: white; background-color: rgba(220, 38, 38, 0.8); 
+             padding: 8px 15px; border-radius: 8px; text-align: center;
+             display: none; z-index: 100;
+        }
+
+        /* === Стили для магазина === */
+        #shopDecksContainer { display: flex; flex-direction: column; gap: 1rem; }
+        .deck-row-custom { display: flex; flex-direction: row; gap: 0.25rem; }
+        .deck-container-custom { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; }
+        .shop-card-title-custom { text-align: center; font-size: 0.7rem; margin-bottom: 0.125rem; width: 100%; font-weight: 600; }
+        .tier-text-1 { color: #d1d5db; } .tier-text-2 { color: #c084fc; } .tier-text-3 { color: #facc15; } .tier-text-4 { color: #fb923c; }
+        .deck-roles-text-color { color: #9ca3af; font-weight: 500; }
+        .shop-card { background-color: #4b5563; border-radius: 0.25rem; border: 1px solid #6b7280; cursor: pointer; transition: all 150ms ease-in-out; position: relative; overflow: hidden; padding: 0; aspect-ratio: 1 / 1; width: 100%; }
+        .shop-card:hover { border-color: #60a5fa; background-color: #6b7280; }
+        .shop-card img { display: block; width: 100%; height: 100%; object-fit: cover; opacity: 0.8; }
+        .shop-card .info-overlay { position: absolute; bottom: 0; left: 0; right: 0; background-color: rgba(0,0,0,0.7); padding: 2px 4px; text-align: center; font-size: 0.7rem; line-height: 0.85rem; color: white; }
+        .shop-card .info-overlay .op-name { font-weight: 600; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .shop-card .info-overlay .op-cost { color: #06b3fd; font-weight: 500; }
+        .shop-card-info-btn { position: absolute; top: 5px; left: 5px; width: 20px; height: 20px; background-color: rgba(96,165,250,0.7); color: white; border: 1px solid rgba(255,255,255,0.6); border-radius: 4px; font-size: 13px; font-weight: bold; text-align: center; line-height: 18px; cursor: help; z-index: 5; transition: background-color 0.2s; }
+        .shop-card-info-btn:hover { background-color: rgba(96,165,250,1); }
+        .shop-card.disabled { opacity: 0.5; cursor: not-allowed; }
+        .shop-card.disabled .shop-card-info-btn { opacity: 0.6; cursor: not-allowed; }
+        .shop-card.disabled:hover { border-color: #6b7280; background-color: #4b5563; }
+        .shop-card.highlighted { border: 2px solid #facc15; }
+        .deck-container-custom.refresh-highlight { outline: 2px solid #fde047; outline-offset: -2px; border-radius: 0.25rem; }
+        .shop-card-placeholder { aspect-ratio: 1 / 1; width: 100%; background-color: #374151; border-radius: 0.25rem; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; color: #9ca3af; border: 1px dashed #6b7280; padding: 0.25rem; text-align: center; }
+        /* === Конец стилей для магазина === */
+
+        /* === Стили для верхней инфо-панели === */
+        .top-info-block { display: flex; align-items: center; gap: 0.25rem; padding-left: 0.25rem; padding-right: 0.25rem; }
+        .top-info-block img { height: 1.1rem; width: auto; }
+        .top-info-label { color: #9ca3af; font-size: 0.75rem; font-weight: 500; }
+        .top-info-value { color: #e5e7eb; font-weight: 600; font-size: 0.875rem; }
+        .top-info-divider { color: #4b5563; margin-left: 0.25rem; margin-right: 0.25rem; }
+        .hp-bar-container { width: 400px; max-width: 100%; height: 18px; background-color: #374151; border-radius: 3px; position: relative; overflow: hidden; border: 1px solid #4b5563; }
+        .hp-bar-fill { height: 100%; background-color: #4ade80; width: 100%; border-radius: 2px; transition: width 0.3s ease-out, background-color 0.3s ease-out; display: flex; align-items: center; justify-content: center; }
+        .hp-bar-text { font-size: 0.7rem; color: white; font-weight: 700; text-shadow: 1px 1px 3px rgba(0,0,0,0.85); position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); white-space: nowrap; }
+        /* === Конец стилей для верхней инфо-панели === */
+
+        #tooltip { 
+			position: absolute; 
+			display: none; 
+			background-color: rgba(42,50,66,0.95); 
+			color: white; 
+			border: 1px solid #4a5568; 
+			border-radius: 6px; 
+			padding: 10px 14px; 
+			font-size: 12px; 
+			pointer-events: none; 
+			z-index: 101; 
+			max-width: 240px; 
+			line-height: 1.5; 
+			}
+        #tooltip strong { color: #93c5fd; }
+
+        /* === Стили для кнопок зума === */
+        .zoom-controls button { background-color: transparent; border: 1px solid #6b7280; color: #9ca3af; font-weight: 300; width: 2.5rem; height: 2.5rem; border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; line-height: 1; box-shadow: none; cursor: pointer; transition: all 0.15s ease-in-out; }
+        .zoom-controls button:hover { background-color: rgba(55,65,81,0.3); border-color: #9ca3af; color: white; }
+        .zoom-controls button:active { background-color: rgba(31,41,55,0.5); transform: scale(0.95); }
+        /* === Конец стилей для кнопок зума === */
+
+         .phase-button:disabled { @apply bg-gray-500 cursor-not-allowed opacity-60; }
+         #gameStatusMessage { } 
+
+        /* === Стили для модальных окон (ПОЛНОЭКРАННЫЙ ОВЕРЛЕЙ) === */
+        .modal-overlay {
+            position: fixed; 
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6); 
+            display: none; 
+            align-items: center; 
+            justify-content: center; 
+            z-index: 1000; 
+        }
+        .modal-content {
+            background-color: #374151; 
+            padding: 24px; 
+            border-radius: 8px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            width: 90%;
+            max-width: 400px; 
+            text-align: center;
+            /* Убрали position: absolute; */
+        }
+        .modal-content h3 {
+            font-size: 1.25rem; 
+            font-weight: 600; 
+            margin-bottom: 1rem; 
+            color: #e5e7eb; 
+        }
+        .modal-content p {
+            font-size: 0.875rem; 
+            color: #d1d5db; 
+            margin-bottom: 1.5rem; 
+            line-height: 1.6;
+        }
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end; 
+            gap: 0.75rem; 
+        }
+        .modal-button {
+            padding: 0.5rem 1rem; 
+            border-radius: 6px; 
+            font-size: 0.875rem; 
+            font-weight: 500; 
+            cursor: pointer;
+            transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+            border: 1px solid transparent;
+        }
+        .modal-button-confirm-green {
+            background-color: #16a34a; 
+            color: white;
+            border-color: #15803d; 
+        }
+        .modal-button-confirm-green:hover {
+            background-color: #15803d; 
+            border-color: #14532d; 
+        }
+        .modal-button-sell {
+            background-color: #dc2626; 
+            color: white;
+            border-color: #b91c1c; 
+        }
+        .modal-button-sell:hover {
+            background-color: #b91c1c; 
+            border-color: #991b1b; 
+        }
+        .modal-button-cancel {
+            background-color: #4b5563; 
+            color: #e5e7eb; 
+            border-color: #374151; 
+        }
+        .modal-button-cancel:hover {
+            background-color: #6b7280; 
+            border-color: #4b5563; 
+        }
+        /* === Конец стилей для модальных окон === */
+		.shop-card.selected-shop-card {
+			border: 3px solid #60a5fa !important; /* Голубая обводка */
+			box-shadow: 0 0 10px rgba(96, 165, 250, 0.5);
+			/* Убрали transform: scale(1.05); */
+		}
+
+		.shop-card.selected-shop-card:hover {
+			border-color: #60a5fa !important;
+		}
+
+		.map-card.selected {
+			border-color: #3b82f6;
+			background-color: rgba(59, 130, 246, 0.1);
+		}
+
+		.map-card img {
+			image-rendering: pixelated;
+			image-rendering: -moz-crisp-edges;
+			image-rendering: crisp-edges;
+		}
+
+		/* Фон начального экрана */
+		#startScreen {
+			background-image: url('img/start_bg.png');
+			background-size: cover;
+			background-position: center;
+			background-repeat: no-repeat;
+		}
+
+		/* Фон игрового интерфейса */
+		#gameInterface {
+			background-image: url('img/bg.png');
+			background-size: cover;
+			background-position: center;
+			background-repeat: no-repeat;
+		}
+
+		/* Прозрачность окна выбора сложности */
+		#startScreen .bg-gray-800 {
+			background-color: rgba(31, 41, 55, 0.8) !important; /* 80% opacity */
+			backdrop-filter: blur(4px); /* Дополнительный эффект размытия */
+		}
+
+		/* Прозрачность панелей магазина и лога */
+		#leftPanel, #logPanel {
+			background-color: rgba(55, 65, 81, 0.8) !important; /* 80% opacity */
+			backdrop-filter: blur(2px);
+		}
+
+		/* Прозрачность верхней панели для согласованности */
+		#topInfoPanel {
+			background-color: rgba(17, 24, 39, 0.9) !important; /* 90% opacity */
+			backdrop-filter: blur(2px);
+		}
+
+		/* Убираем фон с центральной игровой области, чтобы был виден фон */
+		#gameArea {
+			background-color: transparent !important;
+		}
+
+		/* Делаем фон canvas полупрозрачным */
+		#gameCanvas {
+			background-color: rgba(31, 41, 55, 0.3); /* Легкая тонировка для лучшей видимости */
+		}
+
+		/* Анимация появления интерфейса */
+		#gameInterface {
+			animation: fadeIn 0.5s ease-in-out;
+		}
+
+		@keyframes fadeIn {
+			from {
+				opacity: 0;
+			}
+			to {
+				opacity: 1;
+			}
+		}
+
+		/* Тень для лучшей читаемости текста на прозрачных панелях */
+		#leftPanel h2, #logPanel h2 {
+			text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+		}
+
+		/* Улучшенная читаемость для карточек в магазине */
+		.shop-card {
+			background-color: rgba(75, 85, 99, 0.9);
+			backdrop-filter: blur(1px);
+		}
+		
+		/* Стили редактора карт */
+		.editor-tool {
+			transition: all 0.2s;
+		}
+
+		.editor-tool.selected {
+			background-color: #7c3aed !important;
+			transform: scale(1.05);
+		}
+
+		.editor-tool img {
+			image-rendering: pixelated;
+			image-rendering: -moz-crisp-edges;
+			image-rendering: crisp-edges;
+		}
+
+		#mapEditorScreen .flex-1 {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+
+		#mapEditorCanvas {
+			image-rendering: pixelated;
+			image-rendering: -moz-crisp-edges;
+			image-rendering: crisp-edges;
+			cursor: crosshair;
+			background-color: #2d3748;
+			border: 2px solid #4a5568;
+			box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+		}
+
+		/* Анимации для статистики */
+		@keyframes slideInUp {
+			from {
+				opacity: 0;
+				transform: translateY(30px);
+			}
+			to {
+				opacity: 1;
+				transform: translateY(0);
+			}
+		}
+
+		@keyframes countUp {
+			from {
+				opacity: 0;
+				transform: scale(0.5);
+			}
+			to {
+				opacity: 1;
+				transform: scale(1);
+			}
+		}
+
+		@keyframes starPulse {
+			0%, 100% { transform: scale(1); }
+			50% { transform: scale(1.2); }
+		}
+
+		.stats-modal-animated {
+			animation: slideInUp 0.5s ease-out;
+		}
+
+		.stat-card {
+			animation: slideInUp 0.6s ease-out backwards;
+		}
+
+		.stat-card:nth-child(1) { animation-delay: 0.1s; }
+		.stat-card:nth-child(2) { animation-delay: 0.2s; }
+		.stat-card:nth-child(3) { animation-delay: 0.3s; }
+		.stat-card:nth-child(4) { animation-delay: 0.4s; }
+
+		.stat-number {
+			animation: countUp 0.8s ease-out backwards;
+			animation-delay: 0.5s;
+		}
+
+		/* Плавные переходы для элементов интерфейса */
+		.shop-card {
+			transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		}
+
+		.shop-card:hover {
+			transform: translateY(-2px);
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+		}
+
+		.phase-button {
+			transition: all 0.2s ease;
+		}
+
+		.phase-button:hover:not(:disabled) {
+			transform: translateY(-1px);
+			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+		}
+
+		.phase-button:active:not(:disabled) {
+			transform: translateY(0);
+		}
+
+		/* Анимация появления врагов */
+		@keyframes enemySpawn {
+			from {
+				opacity: 0;
+				transform: scale(0);
+			}
+			to {
+				opacity: 1;
+				transform: scale(1);
+			}
+		}
+
+		/* Анимация HP бара */
+		.hp-bar-fill {
+			transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+						background-color 0.3s ease;
+		}
+
+		/* Анимация для модальных окон */
+		.modal-content {
+			animation: modalSlideIn 0.3s ease-out;
+		}
+
+		@keyframes modalSlideIn {
+			from {
+				opacity: 0;
+				transform: scale(0.9);
+			}
+			to {
+				opacity: 1;
+				transform: scale(1);
+			}
+		}
+
+		/* Звезды рейтинга */
+		.rating-star {
+			animation: starPulse 1s ease-in-out infinite;
+			display: inline-block;
+		}
+
+		.rating-star:nth-child(1) { animation-delay: 0s; }
+		.rating-star:nth-child(2) { animation-delay: 0.2s; }
+		.rating-star:nth-child(3) { animation-delay: 0.4s; }
+		
+		@keyframes fillBar {
+			to {
+				width: var(--bar-width);
+			}
+		}
+
+    </style>
+     <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+</head>
+<body class="text-white flex flex-col h-screen">
+
+	<!-- Стартовый экран -->
+	<div id="startScreen" class="fixed inset-0 bg-gray-900 flex items-center justify-center z-50">
+		<div class="bg-gray-800 p-8 rounded-lg shadow-2xl max-w-4xl w-full mx-4">
+			<h1 class="text-4xl font-bold text-center mb-8 text-blue-400">Arknights Board Game TD</h1>
+			
+			<div class="mb-8">
+				<h2 class="text-2xl font-semibold mb-4 text-center">Выберите карту</h2>
+				<div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+					<!-- Легкая карта -->
+					<div class="map-card flex flex-col items-center text-center cursor-pointer border-2 border-gray-600 rounded-lg p-4 hover:border-blue-500 transition-all" data-map="easy">
+						<img src="img/easy.png" alt="Легкая" class="w-[230px] h-40 object-cover rounded mb-2">
+						<h3 class="text-lg font-semibold text-green-400">Легкая</h3>
+						<p class="text-sm text-gray-400">Для новичков</p>
+						<p class="text-xs text-gray-500 mt-1">Путь врагов 27 клеток</p>
+					</div>
+					
+					<!-- Нормальная карта -->
+					<div class="map-card flex flex-col items-center text-center cursor-pointer border-2 border-gray-600 rounded-lg p-4 hover:border-blue-500 transition-all" data-map="normal">
+						<img src="img/normal.png" alt="Нормальная" class="w-[230px] h-40 object-cover rounded mb-2">
+						<h3 class="text-lg font-semibold text-yellow-400">Нормальная</h3>
+						<p class="text-sm text-gray-400">Средняя сложность</p>
+						<p class="text-xs text-gray-500 mt-1">Путь врагов 20 клеток</p>
+					</div>
+					
+					<!-- Сложная карта -->
+					<div class="map-card flex flex-col items-center text-center cursor-pointer border-2 border-gray-600 rounded-lg p-4 hover:border-blue-500 transition-all" data-map="hard">
+						<img src="img/hard.png" alt="Сложная" class="w-[230px] h-40 object-cover rounded mb-2">
+						<h3 class="text-lg font-semibold text-red-400">Сложная</h3>
+						<p class="text-sm text-gray-400">Для экспертов</p>
+						<p class="text-xs text-gray-500 mt-1">Путь врагов 16 клеток</p>
+					</div>
+					
+					<!-- Редактор карт -->
+					<div class="map-card flex flex-col items-center text-center cursor-pointer border-2 border-gray-600 rounded-lg p-4 hover:border-purple-500 transition-all" data-map="editor">
+						<div class="w-full h-40 bg-gray-700 rounded mb-2 flex items-center justify-center">
+							<svg class="w-20 h-20 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+							</svg>
+						</div>
+						<h3 class="text-lg font-semibold text-purple-400">Создать карту</h3>
+						<p class="text-sm text-gray-400">Редактор карт</p>
+						<p class="text-xs text-gray-500 mt-1">Настраиваемая сложность</p>
+					</div>
+					
+				</div>
+			</div>
+			
+			<div class="text-center">
+				<button id="startGameBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg text-lg disabled:bg-gray-600 disabled:cursor-not-allowed transition-all" disabled>
+					Начать игру
+				</button>
+			</div>
+		</div>
+	</div>
+	
+	<!-- Редактор карт -->
+	<div id="mapEditorScreen" class="fixed inset-0 flex overflow-hidden" style="display: none; background-image: url('img/editor_bg.png'); background-size: cover; background-position: center;">
+		<div class="flex items-center justify-center w-full h-full p-8">
+			<div class="flex gap-4 max-w-7xl w-full h-full">
+				<!-- Левая панель инструментов -->
+				<div class="w-64 bg-gray-800 bg-opacity-90 backdrop-filter backdrop-blur-sm p-4 rounded-lg shadow-2xl overflow-y-auto">
+					<h2 class="text-2xl font-bold mb-4 text-purple-400">Редактор карт</h2>
+					
+					<h3 class="text-lg font-semibold mb-2">Инструменты</h3>
+					<div class="space-y-2 mb-6">
+						<button class="editor-tool w-full p-3 bg-gray-700 hover:bg-gray-600 rounded flex items-center gap-3 transition-all" data-tool="enemy_start">
+							<img src="img/map/start_enemy_square.png" class="w-8 h-8" alt="">
+							<span>Старт врагов</span>
+						</button>
+						<button class="editor-tool w-full p-3 bg-gray-700 hover:bg-gray-600 rounded flex items-center gap-3 transition-all" data-tool="enemy_end">
+							<img src="img/map/end_enemy_square.png" class="w-8 h-8" alt="">
+							<span>Конец пути</span>
+						</button>
+						<button class="editor-tool w-full p-3 bg-gray-700 hover:bg-gray-600 rounded flex items-center gap-3 transition-all" data-tool="enemy_path">
+							<img src="img/map/enemy_square.png" class="w-8 h-8" alt="">
+							<span>Путь врагов</span>
+						</button>
+						<button class="editor-tool w-full p-3 bg-gray-700 hover:bg-gray-600 rounded flex items-center gap-3 transition-all" data-tool="placement">
+							<img src="img/map/deploy_square.png" class="w-8 h-8" alt="">
+							<span>Место оператора</span>
+						</button>
+						<button class="editor-tool w-full p-3 bg-gray-700 hover:bg-gray-600 rounded flex items-center gap-3 transition-all" data-tool="wall">
+							<img src="img/map/obstacle.png" class="w-8 h-8" alt="">
+							<span>Стена/Препятствие</span>
+						</button>
+						<button class="editor-tool w-full p-3 bg-gray-700 hover:bg-gray-600 rounded flex items-center gap-3 transition-all" data-tool="eraser">
+							<svg class="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+							</svg>
+							<span>Ластик</span>
+						</button>
+					</div>
+					
+					<h3 class="text-lg font-semibold mb-2">Действия</h3>
+					<div>
+						<button id="editorPlayBtn" class="mt-2 w-full p-3 bg-green-600 hover:bg-green-700 rounded font-semibold transition-all">
+							Играть на карте
+						</button>
+						<button id="editorSaveBtn" class="mt-4 w-full p-3 bg-yellow-600 hover:bg-yellow-700 rounded transition-all">
+							Сохранить карту
+						</button>
+						<label for="editorLoadInput" class="mt-2 block w-full p-3 bg-blue-600 hover:bg-blue-700 rounded text-center cursor-pointer transition-all">
+							Загрузить карту
+						</label>
+						<input type="file" id="editorLoadInput" accept=".json" class="hidden">
+						<button id="editorClearBtn" class="mt-4 w-full p-3 bg-red-500 hover:bg-red-600 rounded transition-all">
+							Очистить всё
+						</button>
+						<button id="editorBackBtn" class="mt-2 w-full p-3 bg-gray-600 hover:bg-gray-700 rounded transition-all">
+							Назад в меню
+						</button>
+					</div>
+				</div>
+				
+				<!-- Область редактора -->
+				<div class="flex-1 bg-gray-800 bg-opacity-90 backdrop-filter backdrop-blur-sm p-4 rounded-lg shadow-2xl flex items-center justify-center">
+					<canvas id="mapEditorCanvas"></canvas>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Модальное окно ошибки -->
+	<div id="editorErrorModal" class="modal-overlay">
+		<div class="modal-content">
+			<h3 class="text-red-400">Ошибка</h3>
+			<p id="editorErrorMessage">Сообщение об ошибке</p>
+			<div class="modal-buttons">
+				<button id="editorErrorOkBtn" class="modal-button modal-button-cancel">ОК</button>
+			</div>
+		</div>
+	</div>
+	
+	<!-- Модальное окно подтверждения очистки -->
+	<div id="editorClearModal" class="modal-overlay">
+		<div class="modal-content">
+			<h3>Подтверждение</h3>
+			<p>Вы уверены, что хотите очистить всю карту?</p>
+			<div class="modal-buttons">
+				<button id="editorClearConfirmBtn" class="modal-button modal-button-sell">Очистить</button>
+				<button id="editorClearCancelBtn" class="modal-button modal-button-cancel">Отмена</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- Скрываем основной интерфейс изначально -->
+	<div id="gameInterface" class="flex flex-col h-screen" style="display: none;">
+		<!-- Весь существующий контент (topInfoPanel и далее) -->
+	
+    <div id="topInfoPanel" class="w-full bg-gray-900 px-3 py-2 shadow-md flex items-center flex-shrink-0 text-sm">
+        <div class="flex-1">
+            <div class="flex items-center">
+                <div class="top-info-block mr-2">
+					<button id="surrenderBtn" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs font-medium mr-3">
+						Сдаться
+					</button>
+                    <span class="top-info-label">HP Базы:</span>
+                </div>
+                <div id="baseHpBarContainer" class="hp-bar-container">
+                    <div id="baseHpBarFill" class="hp-bar-fill">
+                    </div>
+                    <span id="baseHpBarText" class="hp-bar-text">10/10</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-center gap-x-2 flex-shrink-0">
+             <button id="endPurchaseBtn" class="phase-button bg-blue-500 hover:bg-blue-600 text-white px-4 py-1.5 rounded-md text-xs font-medium">Начать Бой</button>
+             <button id="endAttackBtn" class="phase-button bg-green-500 hover:bg-green-600 text-white px-4 py-1.5 rounded-md text-xs font-medium" disabled>Завершить Атаку</button>
+        </div>
+
+        <div class="flex-1">
+            <div class="flex items-center justify-end gap-x-3">
+				<div class="top-info-block">
+					<span class="top-info-label">Время:</span>
+					<span id="gameTimer" class="top-info-value">00:00</span>
+				</div>
+				<span class="top-info-divider">|</span>
+                <div class="top-info-block">
+                    <span class="top-info-label">Раунд:</span>
+                    <span id="roundCounter" class="top-info-value">1</span>
+                </div>
+                <span class="top-info-divider">|</span>
+                <div class="top-info-block">
+                    <span class="top-info-label">Бой:</span>
+                    <span id="battleCounter" class="top-info-value">1</span><span class="top-info-label">/<span id="totalBattles">5</span></span>
+                </div>
+                <span class="top-info-divider">|</span>
+                <div class="top-info-block">
+                    <span class="top-info-label">Фаза:</span>
+                    <span id="currentPhaseDisplay" class="top-info-value">Покупка</span>
+					<div class="ml-4">
+						<select id="languageSelector" class="bg-gray-700 border border-gray-600 text-white text-xs rounded px-2 py-1">
+							<option value="">🌐 Язык</option>
+							<option value="ru">🇷🇺 Русский</option>
+							<option value="en">🇬🇧 English</option>
+							<option value="zh-CN">🇨🇳 中文</option>
+							<option value="ja">🇯🇵 日本語</option>
+							<option value="ko">🇰🇷 한국어</option>
+							<option value="es">🇪🇸 Español</option>
+							<option value="de">🇩🇪 Deutsch</option>
+							<option value="fr">🇫🇷 Français</option>
+						</select>
+					</div>
+                </div>
+            </div>
+        </div>
+
+        <span id="heldOperatorInfo" class="text-cyan-300 w-full text-center text-xs absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full hidden"></span>
+        <div id="errorMessage" class="error-message">Ошибка загрузки карты!</div>
+    </div>
+
+    <div class="flex flex-1 overflow-hidden w-full relative">
+        <div id="leftPanel" class="w-1/5 bg-gray-700 p-1 flex flex-col h-full shadow-lg flex-shrink-0 custom-scrollbar">
+             <h2 class="text-base font-semibold mb-1 text-center sticky top-0 bg-gray-700 py-1 z-10 flex-shrink-0">Магазин</h2>
+             <div id="shopAvailabilityInfo" class="text-xs mb-1 text-center text-gray-300 flex-shrink-0">Доступно: Ур. 1, Ур. 2</div>
+             <div class="flex items-center justify-center mb-2 font-semibold">
+                 <img src="img/lmd_icon.png" alt="LMD" class="h-5 w-auto mr-1 inline-block" onerror="this.style.display='none'; this.nextElementSibling.textContent = 'LMD: '; ">
+                 <span id="shopLmdCounter" style="color: #06b3fd;">480</span>
+             </div>
+            <button id="refreshShopBtn" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-1 rounded text-xs mb-4 flex-shrink-0">Обновить (50 LMD)</button>
+			<!-- <button id="testIfritBtn" class="w-full bg-purple-500 hover:bg-purple-600 text-white px-2 py-1 rounded text-xs mb-2 flex-shrink-0">TEST: Разместить Ifrit</button> -->
+             <div id="shopDecksContainer" class="flex-1 overflow-y-auto custom-scrollbar">
+                </div>
+        </div>
+        <div id="gameArea" class="flex-1 bg-gray-800 h-full overflow-auto custom-scrollbar"> 
+             <canvas id="gameCanvas"></canvas>
+             </div>
+         <div class="zoom-controls"> 
+             <button id="zoomInBtn">+</button>
+             <button id="zoomOutBtn">-</button>
+         </div>
+        <div id="logPanel" class="w-1/5 bg-gray-700 p-1 flex flex-col h-full shadow-lg flex-shrink-0 custom-scrollbar">
+             <h2 class="text-base font-semibold mb-1 text-center sticky top-0 bg-gray-700 py-1 z-10 flex-shrink-0">Лог Игры</h2>
+             <div id="logEntries" class="text-xs space-y-1 flex-1 overflow-y-auto custom-scrollbar px-1"></div>
+        </div>
+    </div>
+
+    <div id="gameStatusMessage">
+	</div>
+	
+	<!-- Окно статистики -->
+	<div id="gameStatsModal" class="modal-overlay" style="display: none;">
+		<div class="modal-content stats-modal-animated" style="max-width: 700px; background: linear-gradient(135deg, #1e293b 0%, #334155 100%);">
+			<div class="text-center mb-6">
+				<h2 id="gameStatsTitle" class="text-4xl font-bold mb-2 animate-pulse">ПОБЕДА!</h2>
+				<div id="statsStars" class="flex justify-center gap-2 text-3xl">
+					<!-- Звезды будут добавлены динамически -->
+				</div>
+			</div>
+			
+			<div class="grid grid-cols-2 gap-4 mb-6">
+				<div class="stat-card bg-gradient-to-br from-gray-700 to-gray-800 p-4 rounded-lg transform transition-all hover:scale-105">
+					<div class="flex items-center justify-between">
+						<div>
+							<p class="text-gray-400 text-sm">Раундов пройдено</p>
+							<p id="statsRounds" class="text-3xl font-bold stat-number">0</p>
+						</div>
+						<span class="text-4xl opacity-20">🎯</span>
+					</div>
+				</div>
+				
+				<div class="stat-card bg-gradient-to-br from-gray-700 to-gray-800 p-4 rounded-lg transform transition-all hover:scale-105">
+					<div class="flex items-center justify-between">
+						<div>
+							<p class="text-gray-400 text-sm">HP базы</p>
+							<p id="statsBaseHp" class="text-3xl font-bold stat-number">0/10</p>
+						</div>
+						<span class="text-4xl opacity-20">🏰</span>
+					</div>
+				</div>
+				
+				<div class="stat-card bg-gradient-to-br from-gray-700 to-gray-800 p-4 rounded-lg transform transition-all hover:scale-105">
+					<div class="flex items-center justify-between">
+						<div>
+							<p class="text-gray-400 text-sm">Время игры</p>
+							<p id="statsTime" class="text-3xl font-bold stat-number">00:00</p>
+						</div>
+						<span class="text-4xl opacity-20">⏱️</span>
+					</div>
+				</div>
+				
+				<div class="stat-card bg-gradient-to-br from-gray-700 to-gray-800 p-4 rounded-lg transform transition-all hover:scale-105">
+					<div class="flex items-center justify-between">
+						<div>
+							<p class="text-gray-400 text-sm">Потрачено LMD</p>
+							<p id="statsLmdSpent" class="text-3xl font-bold text-blue-400 stat-number">0</p>
+						</div>
+						<span class="text-4xl opacity-20">💰</span>
+					</div>
+				</div>
+			</div>
+			
+			<div class="stat-card bg-gradient-to-br from-gray-700 to-gray-800 p-4 rounded-lg mb-6 transform transition-all hover:scale-105">
+				<div class="flex items-center justify-between">
+					<div>
+						<p class="text-gray-400 text-sm mb-1">Куплено операторов</p>
+						<p id="statsOperatorsBought" class="text-3xl font-bold stat-number">0</p>
+					</div>
+					<span class="text-4xl opacity-20">👥</span>
+				</div>
+			</div>
+			
+			<div class="bg-gradient-to-br from-gray-700 to-gray-800 p-5 rounded-lg mb-6">
+				<h3 class="text-xl font-semibold mb-4 flex items-center gap-2">
+					<span>🏆</span> Топ 3 оператора по урону
+				</h3>
+				<div id="statsTopDamage" class="space-y-3">
+					<!-- Динамически заполняется -->
+				</div>
+			</div>
+			
+			<div class="text-center">
+				<button id="statsBackToMenuBtn" class="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3 px-8 rounded-lg text-lg transform transition-all hover:scale-105 shadow-lg">
+					Вернуться в меню
+				</button>
+			</div>
+		</div>
+	</div>
+	
+    <div id="tooltip"></div>
+
+    <div id="upgradeConfirmModalOverlay" class="modal-overlay">
+        <div class="modal-content">
+            <h3 id="upgradeModalTitle">Улучшение оператора</h3>
+            <p id="upgradeModalMessage">Вы уверены, что хотите улучшить оператора?</p>
+            <div class="modal-buttons">
+                <button id="upgradeModalConfirmBtn" class="modal-button modal-button-confirm-green">Улучшить</button> 
+                <button id="upgradeModalCancelBtn" class="modal-button modal-button-cancel">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="sellConfirmModalOverlay" class="modal-overlay">
+        <div class="modal-content">
+            <h3 id="sellModalTitle">Продажа оператора</h3>
+            <p id="sellModalMessage">Вы уверены, что хотите продать оператора?</p>
+            <div class="modal-buttons">
+                <button id="sellModalConfirmBtn" class="modal-button modal-button-sell">Продать</button>
+                <button id="sellModalCancelBtn" class="modal-button modal-button-cancel">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+	<div id="surrenderConfirmModalOverlay" class="modal-overlay">
+		<div class="modal-content">
+			<h3>Подтверждение</h3>
+			<p>Вы уверены, что хотите сдаться? Весь прогресс будет потерян.</p>
+			<div class="modal-buttons">
+				<button id="surrenderModalConfirmBtn" class="modal-button modal-button-sell">Сдаться</button>
+				<button id="surrenderModalCancelBtn" class="modal-button modal-button-cancel">Продолжить игру</button>
+			</div>
+		</div>
+	</div>
+	
+	<div id="endAttackConfirmModalOverlay" class="modal-overlay">
+		<div class="modal-content">
+			<h3>Подтверждение</h3>
+			<p>Вы точно хотите закончить фазу атаки? У вас еще есть операторы, которые могут совершить атаку.</p>
+			<div class="modal-buttons">
+				<button id="endAttackModalConfirmBtn" class="modal-button modal-button-confirm-green">Да</button>
+				<button id="endAttackModalCancelBtn" class="modal-button modal-button-cancel">Нет</button>
+			</div>
+		</div>
+	</div>
+
+    <script src="operators_data.js"></script>
+    <script src="enemies_data.js"></script>
+    <script src="game_setup_classes.js"></script>
+    <script src="shop_module.js"></script>
+    <script src="game_logic.js"></script>
+    <script src="ui_interactions.js"></script>
+	<script src="map_data.js"></script>
+	<script src="map_editor.js"></script>
+	
+</body>
+</html>
